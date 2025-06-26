@@ -18,3 +18,4 @@ jobs:
           OTEL_EXPORTER_OTLP_HEADERS: '${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}'
     permissions:
       contents: write
+      actions: write
