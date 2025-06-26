@@ -90,8 +90,8 @@ jobs:
             npm ci 
             npm run build ;;
           go) 
-            go build -o bin/app ;;
-            sleep $(( (RANDOM % 10 == 0) ? 10 : (6 + RANDOM % 4) ))
+            go build -o bin/app 
+            sleep $(( (RANDOM % 10 == 0) ? 10 : (6 + RANDOM % 4) )) ;;
           *)
             echo "Unknown language, skipping build" ;;
         esac
