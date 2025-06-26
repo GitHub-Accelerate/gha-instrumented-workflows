@@ -1,0 +1,251 @@
+name: Advanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  DOCKER_IMAGE: ghcr.io/${{ github.repository }}
+  SCAN_DIR: ${{ github.workspace }}
+
+jobs:
+  # --- Detection & Setup ---
+  detect_environment:
+    name: Environment Detection
+    runs-on: ubuntu-latest
+    outputs:
+      language: ${{ steps.detect-lang.outputs.language }}
+      has_docker: ${{ steps.check-docker.outputs.exists }}
+      language_version: ${{ steps.detect-version.outputs.version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Detect programming language
+      id: detect-lang
+      run: |
+        if [[ -f "pom.xml" ]]; then echo "java"
+        elif [[ -f "package.json" ]]; then echo "javascript"
+        elif [[ -f "requirements.txt" || -f "Pipfile" || -f "pyproject.toml" ]]; then echo "python"
+        elif [[ -f "go.mod" ]]; then echo "go"
+        else echo "unknown"; fi
+        echo "language=${{ steps.detect-lang.outputs.language }}" >> $GITHUB_OUTPUT
+
+    - name: Detect language version
+      id: detect-version
+      run: |
+        case "${{ steps.detect-lang.outputs.language }}" in
+          python) echo "version=$(python --version | cut -d' ' -f2)" ;;
+          java) echo "version=$(java -version 2>&1 | head -1 | cut -d'"' -f2)" ;;
+          javascript) echo "version=$(node --version)" ;;
+          go) echo "version=$(go version | cut -d' ' -f3)" ;;
+          *) echo "version=unknown" ;;
+        esac >> $GITHUB_OUTPUT
+
+    - name: Check for Dockerfile
+      id: check-docker
+      run: |
+        if [ -f "Dockerfile" ]; then echo "exists=true"; else echo "exists=false"; fi
+        echo "exists=${{ steps.check-docker.outputs.exists }}" >> $GITHUB_OUTPUT
+
+  # --- Conditional Build Jobs ---
+  build:
+    name: Build - ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    needs: detect_environment
+    strategy:
+      matrix:
+        language: ${{ fromJson(needs.detect_environment.outputs.language) }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup ${{ matrix.language }}
+      uses: actions/setup-${{ matrix.language }}@v3
+      with:
+        ${{ matrix.language }}-version: ${{ needs.detect_environment.outputs.language_version }}
+
+    - name: Build application
+      run: |
+        case "${{ matrix.language }}" in
+          python) pip install -r requirements.txt ;;
+          java) mvn clean package -DskipTests ;;
+          javascript) npm ci && npm run build ;;
+          go) go build -o bin/app ;;
+        esac
+
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          bin/
+          target/
+          dist/
+          build/
+
+  # --- Python Linting (Conditional) ---
+  lint:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    needs: [detect_environment, build]
+    if: ${{ needs.detect_environment.outputs.language == 'python' }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ needs.detect_environment.outputs.language_version }}
+
+    - name: Install linters
+      run: pip install flake8 black pylint
+
+    - name: Run lint checks
+      run: |
+        flake8 .
+        black --check .
+        pylint **/*.py
+
+  # --- Docker Build (Conditional) ---
+  docker_build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [detect_environment, build]
+    if: ${{ needs.detect_environment.outputs.has_docker == 'true' }}
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.DOCKER_IMAGE }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: ${{ github.ref == 'refs/heads/main' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+  # --- Testing Stages ---
+  unit_test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Run unit tests
+      run: |
+        case "${{ needs.detect_environment.outputs.language }}" in
+          python) pytest tests/unit/ ;;
+          java) mvn test ;;
+          javascript) npm test ;;
+        esac
+
+  integration_test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit_test
+    environment: staging
+    steps:
+    - name: Run integration tests
+      run: # Add integration test commands
+      timeout-minutes: 30
+
+  system_test:
+    name: System Testing
+    runs-on: ubuntu-latest
+    needs: integration_test
+    steps:
+    - name: Execute system tests
+      run: # Add system test commands
+
+  acceptance_test:
+    name: Acceptance Testing
+    runs-on: ubuntu-latest
+    needs: system_test
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+    - name: Run acceptance tests
+      run: # Add acceptance test commands
+
+  # --- Security & Analysis ---
+  sca:
+    name: SCA Scanning
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Run SCA scan
+      uses: shiftleft/scan-action@v2
+      with:
+        output: reports/
+        type: sca
+
+  sast:
+    name: SAST Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Run SAST scan
+      uses: shiftleft/scan-action@v2
+      with:
+        output: reports/
+        type: sast
+
+  dast:
+    name: DAST Scanning
+    runs-on: ubuntu-latest
+    needs: docker_build
+    if: ${{ needs.detect_environment.outputs.has_docker == 'true' && github.ref == 'refs/heads/main' }}
+    steps:
+    - name: Run ZAP scan
+      uses: zaproxy/action-full-scan@v0.6.0
+      with:
+        target: ${{ env.STAGING_URL }}
+        rules_file: 'zap.conf'
+
+  # --- Performance Testing ---
+  performance_test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: system_test
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+    - name: Run load test
+      uses: k6io/action@v0.3.0
+      with:
+        filename: tests/loadtest.js
+
+  # --- Quality Gate ---
+  quality_gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: 
+      - sca
+      - sast
+      - dast
+      - performance_test
+    if: always()
+    steps:
+    - name: Evaluate results
+      run: |
+        # Process reports and decide pipeline outcome
+        echo "Quality checks completed"
