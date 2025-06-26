@@ -1,9 +1,13 @@
 name: 'Deploy OpenTelemetry'
+
 on:
   push:
     branches: main
     paths:
       - .github/workflows/**
+
+permissions: write-all
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -16,6 +20,3 @@ jobs:
         env:
           OTEL_EXPORTER_OTLP_ENDPOINT: '${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}'
           OTEL_EXPORTER_OTLP_HEADERS: '${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}'
-    permissions:
-      contents: write
-      actions: write
