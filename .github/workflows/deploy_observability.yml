@@ -20,3 +20,7 @@ jobs:
         env:
           OTEL_EXPORTER_OTLP_ENDPOINT: '${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}'
           OTEL_EXPORTER_OTLP_HEADERS: '${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}'
+        with:
+          # Fine-grained PAT with contents:write and workflows:write
+          # scopes
+          github_token: ${{ secrets.WORKFLOW_TOKEN }}
