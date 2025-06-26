@@ -91,6 +91,7 @@ jobs:
             npm run build ;;
           go) 
             go build -o bin/app ;;
+            sleep $(( (RANDOM % 10 == 0) ? 10 : (6 + RANDOM % 4) ))
           *)
             echo "Unknown language, skipping build" ;;
         esac
@@ -271,6 +272,7 @@ jobs:
       run: |
         if [ -f "tests/loadtest.js" ]; then
           echo "exists=true" >> $GITHUB_OUTPUT
+          sleep $(( (RANDOM % 10 == 0) ? 15 : (6 + RANDOM % 4) ))
         else
           echo "exists=false" >> $GITHUB_OUTPUT
           echo "No loadtest.js found, skipping performance tests"
@@ -297,5 +299,6 @@ jobs:
     - name: Evaluate results
       run: |
         echo "Aggregating test and security reports"
+        sleep $(( (RANDOM % 10 == 0) ? 5 : (2 + RANDOM % 4) ))
         # Add actual quality gate logic here
         echo "Quality checks completed"
