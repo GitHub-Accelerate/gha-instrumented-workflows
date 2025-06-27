@@ -1,22 +1,18 @@
 name: Advanced CI/CD Pipeline
-
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-
 env:
   DOCKER_IMAGE: ghcr.io/${{ github.repository }}
   SCAN_DIR: ${{ github.workspace }}
-  STAGING_URL: http://staging.example.com  # Update with your actual URL
-
+  STAGING_URL: http://staging.example.com # Update with your actual URL
 # needed to add permissions for CodeQL
 permissions:
   actions: read
   contents: read
   security-events: write
-
 jobs:
   # --- Detection & Setup ---
   detect_environment:
@@ -27,85 +23,73 @@ jobs:
       has_docker: ${{ steps.check-docker.outputs.exists }}
       language_version: ${{ steps.detect-version.outputs.version }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Detect programming language
-      id: detect-lang
-      run: |
-        if [[ -f "pom.xml" ]]; then echo "language=java" >> $GITHUB_OUTPUT
-        elif [[ -f "package.json" ]]; then echo "language=javascript" >> $GITHUB_OUTPUT
-        elif [[ -f "requirements.txt" || -f "Pipfile" || -f "pyproject.toml" ]]; then echo "language=python" >> $GITHUB_OUTPUT
-        elif [[ -f "go.mod" ]]; then echo "language=go" >> $GITHUB_OUTPUT
-        else echo "language=unknown" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Detect language version
-      id: detect-version
-      run: |
-        if [[ "${{ steps.detect-lang.outputs.language }}" == "python" ]]; then
-          echo "version=$(python --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
-        elif [[ "${{ steps.detect-lang.outputs.language }}" == "java" ]]; then
-          echo "version=$(java -version 2>&1 | head -1 | cut -d'"' -f2)" >> $GITHUB_OUTPUT
-        elif [[ "${{ steps.detect-lang.outputs.language }}" == "javascript" ]]; then
-          echo "version=$(node --version)" >> $GITHUB_OUTPUT
-        elif [[ "${{ steps.detect-lang.outputs.language }}" == "go" ]]; then
-          echo "version=$(go version | cut -d' ' -f3)" >> $GITHUB_OUTPUT
-        else
-          echo "version=unknown" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Check for Dockerfile
-      id: check-docker
-      run: |
-        if [ -f "Dockerfile" ]; then 
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else 
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Detect programming language
+        id: detect-lang
+        run: |
+          if [[ -f "pom.xml" ]]; then echo "language=java" >> $GITHUB_OUTPUT
+          elif [[ -f "package.json" ]]; then echo "language=javascript" >> $GITHUB_OUTPUT
+          elif [[ -f "requirements.txt" || -f "Pipfile" || -f "pyproject.toml" ]]; then echo "language=python" >> $GITHUB_OUTPUT
+          elif [[ -f "go.mod" ]]; then echo "language=go" >> $GITHUB_OUTPUT
+          else echo "language=unknown" >> $GITHUB_OUTPUT
+          fi
+      - name: Detect language version
+        id: detect-version
+        run: |
+          if [[ "${{ steps.detect-lang.outputs.language }}" == "python" ]]; then
+            echo "version=$(python --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.detect-lang.outputs.language }}" == "java" ]]; then
+            echo "version=$(java -version 2>&1 | head -1 | cut -d'"' -f2)" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.detect-lang.outputs.language }}" == "javascript" ]]; then
+            echo "version=$(node --version)" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.detect-lang.outputs.language }}" == "go" ]]; then
+            echo "version=$(go version | cut -d' ' -f3)" >> $GITHUB_OUTPUT
+          else
+            echo "version=unknown" >> $GITHUB_OUTPUT
+          fi
+      - name: Check for Dockerfile
+        id: check-docker
+        run: "if [ -f \"Dockerfile\" ]; then \n  echo \"exists=true\" >> $GITHUB_OUTPUT\nelse \n  echo \"exists=false\" >> $GITHUB_OUTPUT\nfi\n"
+    permissions:
+      actions: read
   # --- Conditional Build Jobs ---
   build:
     name: Build
     runs-on: ubuntu-latest
     needs: detect_environment
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup environment
-      run: |
-        echo "Building ${{ needs.detect_environment.outputs.language }} application"
-        echo "Version: ${{ needs.detect_environment.outputs.language_version }}"
-
-    - name: Build application
-      run: |
-        case "${{ needs.detect_environment.outputs.language }}" in
-          python) 
-            pip install -r requirements.txt
-            python setup.py build ;;
-          java) 
-            mvn clean package -DskipTests ;;
-          javascript) 
-            npm ci 
-            npm run build ;;
-          go) 
-            go build -o bin/app 
-            sleep $(( (RANDOM % 10 == 0) ? 10 : (6 + RANDOM % 4) )) ;;
-          *)
-            echo "Unknown language, skipping build" ;;
-        esac
-
-    - name: Archive artifacts
-      uses: actions/upload-artifact@v4.6.2
-      with:
-        name: build-artifacts
-        path: |
-          bin/
-          target/
-          dist/
-          build/
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup environment
+        run: |
+          echo "Building ${{ needs.detect_environment.outputs.language }} application"
+          echo "Version: ${{ needs.detect_environment.outputs.language_version }}"
+      - name: Build application
+        run: "case \"${{ needs.detect_environment.outputs.language }}\" in\n  python) \n    pip install -r requirements.txt\n    python setup.py build ;;\n  java) \n    mvn clean package -DskipTests ;;\n  javascript) \n    npm ci \n    npm run build ;;\n  go) \n    go build -o bin/app \n    sleep $(( (RANDOM % 10 == 0) ? 10 : (6 + RANDOM % 4) )) ;;\n  *)\n    echo \"Unknown language, skipping build\" ;;\nesac\n"
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: build-artifacts
+          path: |
+            bin/
+            target/
+            dist/
+            build/
+    permissions:
+      actions: read
   # --- Python Linting (Conditional) ---
   lint:
     name: Lint Python
@@ -113,23 +97,27 @@ jobs:
     needs: [detect_environment, build]
     if: ${{ needs.detect_environment.outputs.language == 'python' }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ needs.detect_environment.outputs.language_version }}
-
-    - name: Install linters
-      run: pip install flake8 black pylint
-
-    - name: Run lint checks
-      run: |
-        flake8 . --count --show-source --statistics
-        black --check --diff .
-        pylint **/*.py
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ needs.detect_environment.outputs.language_version }}
+      - name: Install linters
+        run: pip install flake8 black pylint
+      - name: Run lint checks
+        run: |
+          flake8 . --count --show-source --statistics
+          black --check --diff .
+          pylint **/*.py
+    permissions:
+      actions: read
   # --- Docker Build (Conditional) ---
   docker_build:
     name: Build Docker Image
@@ -139,124 +127,175 @@ jobs:
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ env.DOCKER_IMAGE }}
-
-    - name: Build and push
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        push: ${{ github.ref == 'refs/heads/main' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}","${{ secrets.GITHUB_TOKEN }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+    permissions:
+      actions: read
   # --- Testing Stages ---
   unit_test:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: build
     steps:
-    - name: Run unit tests
-      run: |
-        case "${{ needs.detect_environment.outputs.language }}" in
-          python) pytest tests/unit/ ;;
-          java) mvn test ;;
-          javascript) npm test ;;
-          go) go test -v ./... ;;
-          *) echo "No unit tests configured" ;;
-        esac
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Run unit tests
+        run: |
+          case "${{ needs.detect_environment.outputs.language }}" in
+            python) pytest tests/unit/ ;;
+            java) mvn test ;;
+            javascript) npm test ;;
+            go) go test -v ./... ;;
+            *) echo "No unit tests configured" ;;
+          esac
+    permissions:
+      actions: read
   integration_test:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: unit_test
     #environment: staging
     steps:
-    - name: Run integration tests
-      run: |
-        echo "Running integration tests for ${{ needs.detect_environment.outputs.language }}"
-        # Actual test commands would go here
-        echo "Integration tests completed"
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Run integration tests
+        run: |
+          echo "Running integration tests for ${{ needs.detect_environment.outputs.language }}"
+          # Actual test commands would go here
+          echo "Integration tests completed"
+    permissions:
+      actions: read
   system_test:
     name: System Testing
     runs-on: ubuntu-latest
     needs: integration_test
     steps:
-    - name: Execute system tests
-      run: |
-        echo "Running system tests"
-        # Actual test commands would go here
-        echo "System tests completed"
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Execute system tests
+        run: |
+          echo "Running system tests"
+          # Actual test commands would go here
+          echo "System tests completed"
+    permissions:
+      actions: read
   acceptance_test:
     name: Acceptance Testing
     runs-on: ubuntu-latest
     needs: system_test
     if: ${{ github.ref == 'refs/heads/main' }}
     steps:
-    - name: Run acceptance tests
-      run: |
-        echo "Running acceptance tests"
-        # Actual test commands would go here
-        echo "Acceptance tests completed"
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Run acceptance tests
+        run: |
+          echo "Running acceptance tests"
+          # Actual test commands would go here
+          echo "Acceptance tests completed"
+    permissions:
+      actions: read
   # --- Security & Analysis ---
   sca:
     name: SCA Scanning
     runs-on: ubuntu-latest
     needs: build
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run OWASP Dependency Check
-      uses: dependency-check/Dependency-Check_Action@main
-      with:
-        project: 'my-project'
-        path: '.'  # Scan entire workspace instead of 'src'
-        format: 'HTML'
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'my-project'
+          path: '.' # Scan entire workspace instead of 'src'
+          format: 'HTML'
+    permissions:
+      actions: read
   sast:
     name: SAST Analysis
     runs-on: ubuntu-latest
     needs: build
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+    permissions:
+      actions: read
   dast:
     name: DAST Scanning
     runs-on: ubuntu-latest
     needs: docker_build
     if: ${{ needs.detect_environment.outputs.has_docker == 'true' && github.ref == 'refs/heads/main' }}
     steps:
-    - name: Run ZAP scan
-      uses: zaproxy/action-full-scan@v0.6.0
-      with:
-        target: ${{ env.STAGING_URL }}
-        rules_file_name: 'relaxed'
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Run ZAP scan
+        uses: zaproxy/action-full-scan@v0.6.0
+        with:
+          target: ${{ env.STAGING_URL }}
+          rules_file_name: 'relaxed'
+    permissions:
+      actions: read
   # --- Performance Testing ---
   performance_test:
     name: Performance Testing
@@ -264,31 +303,36 @@ jobs:
     needs: system_test
     if: ${{ github.ref == 'refs/heads/main' }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Check for load test script
-      id: check_script
-      run: |
-        if [ -f "tests/loadtest.js" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-          sleep $(( (RANDOM % 10 == 0) ? 15 : (6 + RANDOM % 4) ))
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-          echo "No loadtest.js found, skipping performance tests"
-        fi
-
-    - name: Run load test
-      if: steps.check_script.outputs.exists == 'true'
-      uses: k6io/action@v0.3.0
-      with:
-        filename: tests/loadtest.js
-
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Check for load test script
+        id: check_script
+        run: |
+          if [ -f "tests/loadtest.js" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            sleep $(( (RANDOM % 10 == 0) ? 15 : (6 + RANDOM % 4) ))
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "No loadtest.js found, skipping performance tests"
+          fi
+      - name: Run load test
+        if: steps.check_script.outputs.exists == 'true'
+        uses: k6io/action@v0.3.0
+        with:
+          filename: tests/loadtest.js
+    permissions:
+      actions: read
   # --- Quality Gate ---
   quality_gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: 
+    needs:
       - sca
       - sast
       - dast
@@ -296,9 +340,17 @@ jobs:
       - acceptance_test
     if: always()
     steps:
-    - name: Evaluate results
-      run: |
-        echo "Aggregating test and security reports"
-        sleep $(( (RANDOM % 10 == 0) ? 5 : (2 + RANDOM % 4) ))
-        # Add actual quality gate logic here
-        echo "Quality checks completed"
+      - uses: plengauer/opentelemetry-github/actions/instrument/job@main
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+        with:
+          secrets_to_redact: '["${{ github.token }}"]'
+      - name: Evaluate results
+        run: |-
+          echo "Aggregating test and security reports"
+          sleep $(( (RANDOM % 10 == 0) ? 5 : (2 + RANDOM % 4) ))
+          # Add actual quality gate logic here
+          echo "Quality checks completed"
+    permissions:
+      actions: read
