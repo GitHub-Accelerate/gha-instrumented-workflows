@@ -9,10 +9,7 @@ env:
   SCAN_DIR: ${{ github.workspace }}
   STAGING_URL: http://staging.example.com # Update with your actual URL
 # needed to add permissions for CodeQL
-permissions:
-  actions: read
-  contents: read
-  security-events: write
+permissions: write-all
 jobs:
   # --- Detection & Setup ---
   detect_environment:
